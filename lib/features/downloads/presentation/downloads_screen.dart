@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../../app/providers.dart';
 import '../../../core/design/glass_panel.dart';
+import '../../../resolver/analyzed_resource.dart';
+import '../../../resolver/refresh_source_media.dart';
 import '../../../core/widgets/media_thumbnail.dart';
 import '../../../core/utils/format_utils.dart';
 import '../../../core/utils/url_security.dart';
@@ -33,6 +35,17 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
 
   Future<void> _dismissTask(DownloadTask task) async {
     await ref.read(downloadManagerProvider).deleteTask(task, deleteFile: false);
+  }
+
+  Future<AnalyzedResource?> _refreshMedia(String sourceUrl) {
+    return refreshSourceMedia(ref.read(linkAnalyzerProvider), sourceUrl);
+  }
+
+  Future<void> _retryFailed(DownloadTask task) {
+    return ref.read(downloadManagerProvider).retry(
+          task,
+          refreshFromSource: _refreshMedia,
+        );
   }
 
   @override
@@ -157,7 +170,7 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
                           final t = failed[i];
                           return _FailedTaskCard(
                             task: t,
-                            onRetry: () => manager.retry(t),
+                            onRetry: () => _retryFailed(t),
                             onDismiss: () => _dismissTask(t),
                           );
                         },

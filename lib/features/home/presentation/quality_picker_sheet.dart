@@ -4,9 +4,9 @@ import '../../../core/utils/format_utils.dart';
 import '../../../core/widgets/media_thumbnail.dart';
 import '../../../features/downloads/domain/download_selection.dart';
 import '../../../features/downloads/domain/output_profile.dart';
+import '../../../downloads/extractor_download_headers.dart';
 import '../../../resolver/analyzed_resource.dart';
 import '../../../resolver/media_variant.dart';
-import '../../../downloads/video_transcoder.dart';
 
 class _PickerOption {
   _PickerOption({
@@ -24,7 +24,14 @@ class _PickerOption {
   final DownloadSelection selection;
 }
 
-/// Modal : format source + HD ou 420p converti (vidéos).
+class _OptionSection {
+  const _OptionSection({required this.title, required this.options});
+
+  final String title;
+  final List<_PickerOption> options;
+}
+
+/// Modal : choix du format source avant téléchargement.
 Future<QualityPickerResult?> showQualityPickerSheet({
   required BuildContext context,
   required String title,
@@ -36,6 +43,7 @@ Future<QualityPickerResult?> showQualityPickerSheet({
   final options = _buildOptions(variants, defaultResource);
   if (options.isEmpty) return null;
 
+  final sections = _groupOptionSections(options);
   final initialId = _initialOptionId(options, defaultResource);
   final multiSelect = _isImageCarousel(options);
 
@@ -128,103 +136,57 @@ Future<QualityPickerResult?> showQualityPickerSheet({
                       ),
                       SliverPadding(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
-                        sliver: SliverList.separated(
-                          itemCount: options.length,
-                          separatorBuilder: (_, _) => const SizedBox(height: 6),
-                          itemBuilder: (_, i) {
-                            final o = options[i];
-                            final isFocused = focusId == o.id;
-                            final isChecked = multiSelect
-                                ? checkedIds.contains(o.id)
-                                : isFocused;
-                            return Material(
-                              color: isFocused || isChecked
-                                  ? theme.colorScheme.primaryContainer
-                                      .withValues(alpha: 0.45)
-                                  : theme.colorScheme.surfaceContainerHighest
-                                      .withValues(alpha: 0.35),
-                              borderRadius: BorderRadius.circular(12),
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(12),
-                                onTap: () => setState(() {
-                                  focusId = o.id;
-                                  if (multiSelect) {
-                                    if (checkedIds.contains(o.id)) {
-                                      checkedIds = Set.of(checkedIds)..remove(o.id);
+                        sliver: SliverList(
+                          delegate: SliverChildBuilderDelegate(
+                            (context, index) {
+                              final block = _sectionBlockAt(sections, index);
+                              if (block.isHeader) {
+                                return Padding(
+                                  padding: EdgeInsets.only(
+                                    top: block.sectionIndex == 0 ? 0 : 16,
+                                    bottom: 8,
+                                  ),
+                                  child: Text(
+                                    block.title!,
+                                    style: theme.textTheme.titleSmall?.copyWith(
+                                      fontWeight: FontWeight.w700,
+                                      color: theme.colorScheme.primary,
+                                    ),
+                                  ),
+                                );
+                              }
+                              final o = block.option!;
+                              final isFocused = focusId == o.id;
+                              final isChecked = multiSelect
+                                  ? checkedIds.contains(o.id)
+                                  : isFocused;
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 6),
+                                child: _PickerOptionTile(
+                                  option: o,
+                                  theme: theme,
+                                  multiSelect: multiSelect,
+                                  isFocused: isFocused,
+                                  isChecked: isChecked,
+                                  onTap: () => setState(() {
+                                    focusId = o.id;
+                                    if (multiSelect) {
+                                      if (checkedIds.contains(o.id)) {
+                                        checkedIds = Set.of(checkedIds)
+                                          ..remove(o.id);
+                                      } else {
+                                        checkedIds = Set.of(checkedIds)
+                                          ..add(o.id);
+                                      }
                                     } else {
-                                      checkedIds = Set.of(checkedIds)..add(o.id);
+                                      checkedIds = {o.id};
                                     }
-                                  } else {
-                                    checkedIds = {o.id};
-                                  }
-                                }),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 10,
-                                  ),
-                                  child: Row(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      if (_showsPreview(o.selection.resource)) ...[
-                                        _VariantPreview(
-                                          resource: o.selection.resource,
-                                          compact: true,
-                                        ),
-                                        const SizedBox(width: 10),
-                                      ],
-                                      Icon(
-                                        multiSelect
-                                            ? (isChecked
-                                                ? Icons.check_box
-                                                : Icons.check_box_outline_blank)
-                                            : (isFocused
-                                                ? Icons.radio_button_checked
-                                                : Icons.radio_button_off),
-                                        size: 22,
-                                        color: isChecked || isFocused
-                                            ? theme.colorScheme.primary
-                                            : theme.colorScheme.onSurfaceVariant,
-                                      ),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              o.title,
-                                              style: theme.textTheme.bodyMedium
-                                                  ?.copyWith(
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                            Text(
-                                              o.subtitle,
-                                              style: theme.textTheme.labelSmall
-                                                  ?.copyWith(
-                                                color: theme
-                                                    .colorScheme.onSurfaceVariant,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 2),
-                                            Text(
-                                              o.bytesLabel,
-                                              style: theme.textTheme.labelLarge
-                                                  ?.copyWith(
-                                                color: theme.colorScheme.primary,
-                                                fontWeight: FontWeight.w700,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                                  }),
                                 ),
-                              ),
-                            );
-                          },
+                              );
+                            },
+                            childCount: _sectionBlockCount(sections),
+                          ),
                         ),
                       ),
                       SliverPadding(
@@ -336,14 +298,20 @@ List<_PickerOption> _buildOptions(
 
   final out = <_PickerOption>[];
   for (final v in sorted) {
-    final isVideo = VideoTranscoder.isVideoMime(v.resource.mimeType) ||
-        v.resource.contentKind == ContentKind.video;
-
+    final audioOnly = v.resource.contentKind == ContentKind.audio ||
+        v.label.toLowerCase().contains('audio seul');
+    final mergedHd = ExtractorDownloadHeaders.isMergedDownload(
+      v.resource.downloadHeaders,
+    );
     out.add(
       _PickerOption(
-        id: '${v.id}_hd',
-        title: '${v.label} · ${OutputProfile.hd.shortLabel}',
-        subtitle: OutputProfile.hd.displayLabel,
+        id: v.id,
+        title: v.label,
+        subtitle: audioOnly
+            ? 'Fichier audio uniquement'
+            : mergedHd
+                ? 'Vidéo + son (fusion HD)'
+                : OutputProfile.hd.displayLabel,
         bytesLabel: _sizeLabel(v.resource.totalBytes),
         selection: DownloadSelection(
           resource: v.resource,
@@ -351,36 +319,12 @@ List<_PickerOption> _buildOptions(
         ),
       ),
     );
-
-    if (isVideo) {
-      out.add(
-        _PickerOption(
-          id: '${v.id}_420p',
-          title: '${v.label} · ${OutputProfile.reduced420p.shortLabel}',
-          subtitle: OutputProfile.reduced420p.displayLabel,
-          bytesLabel: _sizeLabel(
-            v.resource.totalBytes,
-            reducedEstimate: true,
-          ),
-          selection: DownloadSelection(
-            resource: v.resource,
-            outputProfile: OutputProfile.reduced420p,
-          ),
-        ),
-      );
-    }
   }
   return out;
 }
 
-String _sizeLabel(int? bytes, {bool reducedEstimate = false}) {
-  if (bytes == null) {
-    return reducedEstimate ? '~ taille réduite' : 'Taille inconnue';
-  }
-  if (reducedEstimate) {
-    final est = (bytes * 0.32).round();
-    return '~ ${FormatUtils.formatBytes(est)} (estimé)';
-  }
+String _sizeLabel(int? bytes) {
+  if (bytes == null) return 'Taille inconnue';
   return FormatUtils.formatBytes(bytes);
 }
 
@@ -406,7 +350,173 @@ String _helperLine(List<_PickerOption> options, bool multiSelect) {
   if (onlyImages) {
     return 'Qualité d’origine.';
   }
-  return 'HD = fichier d’origine. 420p = conversion locale plus légère.';
+  if (_groupOptionSections(options).length > 1) {
+    return 'Choisissez une vidéo avec son ou une piste audio seule.';
+  }
+  return 'Choisissez la qualité proposée par la source.';
+}
+
+bool _isAudioOnlyOption(_PickerOption option) {
+  final kind = option.selection.resource.contentKind;
+  if (kind == ContentKind.audio) return true;
+  return option.title.toLowerCase().contains('audio seul');
+}
+
+List<_OptionSection> _groupOptionSections(List<_PickerOption> options) {
+  if (_isImageCarousel(options)) {
+    return [_OptionSection(title: 'Photos', options: options)];
+  }
+
+  final video = <_PickerOption>[];
+  final audio = <_PickerOption>[];
+  for (final o in options) {
+    if (_isAudioOnlyOption(o)) {
+      audio.add(o);
+    } else {
+      video.add(o);
+    }
+  }
+
+  final sections = <_OptionSection>[];
+  if (video.isNotEmpty) {
+    sections.add(_OptionSection(title: 'Vidéo complète', options: video));
+  }
+  if (audio.isNotEmpty) {
+    sections.add(_OptionSection(title: 'Audio seul', options: audio));
+  }
+  if (sections.isEmpty && options.isNotEmpty) {
+    sections.add(_OptionSection(title: 'Formats disponibles', options: options));
+  }
+  return sections;
+}
+
+class _SectionBlock {
+  const _SectionBlock.header(this.title, this.sectionIndex)
+      : option = null,
+        isHeader = true;
+
+  const _SectionBlock.option(this.option)
+      : title = null,
+        sectionIndex = null,
+        isHeader = false;
+
+  final String? title;
+  final int? sectionIndex;
+  final _PickerOption? option;
+  final bool isHeader;
+}
+
+int _sectionBlockCount(List<_OptionSection> sections) {
+  var n = 0;
+  for (final s in sections) {
+    n += 1 + s.options.length;
+  }
+  return n;
+}
+
+_SectionBlock _sectionBlockAt(List<_OptionSection> sections, int index) {
+  var i = 0;
+  for (var si = 0; si < sections.length; si++) {
+    final section = sections[si];
+    if (i == index) {
+      return _SectionBlock.header(section.title, si);
+    }
+    i++;
+    for (final o in section.options) {
+      if (i == index) return _SectionBlock.option(o);
+      i++;
+    }
+  }
+  throw StateError('Index hors limites : $index');
+}
+
+class _PickerOptionTile extends StatelessWidget {
+  const _PickerOptionTile({
+    required this.option,
+    required this.theme,
+    required this.multiSelect,
+    required this.isFocused,
+    required this.isChecked,
+    required this.onTap,
+  });
+
+  final _PickerOption option;
+  final ThemeData theme;
+  final bool multiSelect;
+  final bool isFocused;
+  final bool isChecked;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = theme.colorScheme;
+    return Material(
+      color: isFocused || isChecked
+          ? scheme.primaryContainer.withValues(alpha: 0.45)
+          : scheme.surfaceContainerHighest.withValues(alpha: 0.35),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (_showsPreview(option.selection.resource)) ...[
+                _VariantPreview(
+                  resource: option.selection.resource,
+                  compact: true,
+                ),
+                const SizedBox(width: 10),
+              ],
+              Icon(
+                multiSelect
+                    ? (isChecked
+                        ? Icons.check_box
+                        : Icons.check_box_outline_blank)
+                    : (isFocused
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_off),
+                size: 22,
+                color: isChecked || isFocused
+                    ? scheme.primary
+                    : scheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      option.title,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      option.subtitle,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      option.bytesLabel,
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: scheme.primary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _VariantPreview extends StatelessWidget {
@@ -443,6 +553,9 @@ String _initialOptionId(
     );
     if (hd.isNotEmpty) return hd.first.id;
   }
+  final completeVideo = options.where((o) => !_isAudioOnlyOption(o));
+  if (completeVideo.isNotEmpty) return completeVideo.first.id;
+
   final firstHd = options.where(
     (o) => o.selection.outputProfile == OutputProfile.hd,
   );

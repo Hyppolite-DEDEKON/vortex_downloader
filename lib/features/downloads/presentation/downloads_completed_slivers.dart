@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/providers.dart';
 import '../../../core/design/glass_panel.dart';
+import '../../../downloads/media_opener.dart';
+import '../../player/local_playback.dart';
 import '../../../core/utils/format_utils.dart';
 import '../../../core/widgets/media_thumbnail.dart';
 import '../domain/download_task.dart';
@@ -76,7 +78,7 @@ List<Widget> buildCompletedSlivers({
           separatorBuilder: (_, __) => const SizedBox(height: 10),
           itemBuilder: (_, i) => _CompletedFileTile(
             task: list[i],
-            onOpen: () => opener.open(list[i].localPath!),
+            onOpen: () => _openCompletedFile(context, opener, list[i]),
             onShare: () => opener.share(
               list[i].localPath!,
               subject: list[i].fileName,
@@ -104,6 +106,7 @@ List<Widget> buildCompletedSlivers({
             final t = list[i];
             return GlassPanel(
               padding: const EdgeInsets.all(10),
+              onTap: () => _openCompletedFile(context, opener, t),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -136,6 +139,23 @@ List<Widget> buildCompletedSlivers({
       ),
     ),
   ];
+}
+
+Future<void> _openCompletedFile(
+  BuildContext context,
+  MediaOpener opener,
+  DownloadTask task,
+) async {
+  if (LocalPlayback.canPlayInApp(task)) {
+    final useExternal = await LocalPlayback.open(context, task);
+    if (!useExternal) return;
+    if (!context.mounted) return;
+  }
+  final result = await opener.openDownload(task);
+  if (!context.mounted || result == OpenDownloadResult.success) return;
+  final msg = openDownloadMessage(result);
+  if (msg.isEmpty) return;
+  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
 }
 
 Future<void> _confirmDelete(
@@ -213,6 +233,7 @@ class _CompletedFileTile extends StatelessWidget {
         ? ' · ${task.outputProfile.shortLabel}'
         : '';
     return GlassPanel(
+      onTap: onOpen,
       child: Row(
         children: [
           MediaThumbnail(
@@ -239,7 +260,11 @@ class _CompletedFileTile extends StatelessWidget {
               ],
             ),
           ),
-          IconButton(onPressed: onOpen, icon: const Icon(Icons.open_in_new)),
+          IconButton(
+            onPressed: onOpen,
+            icon: const Icon(Icons.play_circle_outline_rounded),
+            tooltip: 'Ouvrir',
+          ),
           IconButton(onPressed: onShare, icon: const Icon(Icons.share_outlined)),
           IconButton(onPressed: onDelete, icon: const Icon(Icons.delete_outline)),
         ],

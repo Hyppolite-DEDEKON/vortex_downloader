@@ -14,7 +14,9 @@ abstract final class VariantCatalog {
   ) async {
     final url = uri.toString();
     if (YoutubePlatformExtractor.matchesHost(uri.host)) {
-      return YoutubePlatformExtractor().listVariants(uri);
+      final native = await YoutubePlatformExtractor().listVariants(uri);
+      final ytdlp = await YtdlpVariantList.list(url, locator);
+      return _unionVariants(native, ytdlp);
     }
     if (TiktokPlatformExtractor.matchesHost(uri.host)) {
       return _tiktokVariants(url);
@@ -23,6 +25,19 @@ abstract final class VariantCatalog {
       return YtdlpVariantList.list(url, locator);
     }
     return const [];
+  }
+
+  static List<MediaVariant> _unionVariants(
+    List<MediaVariant> primary,
+    List<MediaVariant> extra,
+  ) {
+    final seen = <String>{};
+    final out = <MediaVariant>[];
+    for (final v in [...primary, ...extra]) {
+      if (seen.add(v.resource.finalUrl)) out.add(v);
+    }
+    out.sort((a, b) => b.sortKey.compareTo(a.sortKey));
+    return out;
   }
 
   static Future<List<MediaVariant>> _tiktokVariants(String pageUrl) async {

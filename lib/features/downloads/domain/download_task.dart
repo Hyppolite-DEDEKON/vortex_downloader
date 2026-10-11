@@ -41,6 +41,7 @@ class DownloadTask {
   String get effectiveDownloadUrl => downloadUrl ?? sourceUrl;
 
   DownloadTask copyWith({
+    String? downloadUrl,
     String? fileName,
     String? localPath,
     String? mimeType,
@@ -59,7 +60,7 @@ class DownloadTask {
     return DownloadTask(
       id: id,
       sourceUrl: sourceUrl,
-      downloadUrl: downloadUrl,
+      downloadUrl: downloadUrl ?? this.downloadUrl,
       fileName: fileName ?? this.fileName,
       localPath: localPath ?? this.localPath,
       mimeType: mimeType ?? this.mimeType,
