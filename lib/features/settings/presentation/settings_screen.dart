@@ -65,6 +65,17 @@ class SettingsScreen extends ConsumerWidget {
                       ),
                 ),
                 SwitchListTile(
+                  title: const Text('Galerie et Téléchargements'),
+                  subtitle: const Text(
+                    'Après chaque succès : photos/vidéos dans la galerie (album Vortex), '
+                    'autres fichiers dans Téléchargements.',
+                  ),
+                  value: settings.saveToPublicStorage,
+                  onChanged: (v) => ref.read(settingsProvider.notifier).update(
+                        settings.copyWith(saveToPublicStorage: v),
+                      ),
+                ),
+                SwitchListTile(
                   title: const Text('Choisir la qualité'),
                   subtitle: const Text(
                     'Modal HD / 420p converti et poids avant chaque téléchargement.',

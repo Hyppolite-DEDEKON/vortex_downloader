@@ -20,6 +20,7 @@ import '../resolver/platform/tiktok_platform_extractor.dart';
 import '../resolver/platform/tiktok_session.dart';
 import 'platform_download_headers.dart';
 import 'download_live_metrics.dart';
+import 'public_media_export.dart';
 import 'storage_service.dart';
 import 'video_transcoder.dart';
 
@@ -191,7 +192,6 @@ class DownloadManager {
 
       var task = initial.copyWith(
         status: DownloadStatus.downloading,
-        fileName: name,
         localPath: target,
         receivedBytes: received,
         clearLastError: true,
@@ -335,6 +335,7 @@ class DownloadManager {
       onTaskUpdated?.call(done);
       onMetricsUpdated?.call(id, const DownloadLiveMetrics());
       VortexLog.download.info('Terminé $id → $target');
+      await _exportToPublicStorage(done, target);
     } on DioException catch (e) {
       if (CancelToken.isCancel(e)) {
         if (_paused.contains(id)) {
@@ -402,6 +403,23 @@ class DownloadManager {
     final byName = p.join(dir, task.fileName);
     if (File(byName).existsSync()) return byName;
     return targetPath;
+  }
+
+  Future<void> _exportToPublicStorage(DownloadTask task, String path) async {
+    if (!_settings.load().saveToPublicStorage) return;
+    try {
+      await PublicMediaExport.export(
+        localPath: path,
+        displayFileName: task.fileName,
+        mimeType: task.mimeType,
+      );
+    } catch (e, st) {
+      VortexLog.download.warning(
+        'Export galerie / Téléchargements échoué (${task.fileName})',
+        e,
+        st,
+      );
+    }
   }
 
   Future<void> _fail(String id, String msg) async {
