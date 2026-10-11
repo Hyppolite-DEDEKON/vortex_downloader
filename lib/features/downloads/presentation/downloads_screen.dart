@@ -601,7 +601,7 @@ class _StatusChip extends StatelessWidget {
     final theme = Theme.of(context);
     final (label, color) = switch (status) {
       DownloadStatus.queued => ('File', theme.colorScheme.outline),
-      DownloadStatus.analyzing => ('Analyse', theme.colorScheme.tertiary),
+      DownloadStatus.analyzing => ('En attente', theme.colorScheme.tertiary),
       DownloadStatus.downloading => ('Actif', theme.colorScheme.primary),
       DownloadStatus.converting => ('Conversion', theme.colorScheme.tertiary),
       DownloadStatus.paused => ('Pause', theme.colorScheme.outline),

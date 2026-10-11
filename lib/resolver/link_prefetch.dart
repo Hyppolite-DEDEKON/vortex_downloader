@@ -3,38 +3,36 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../app/providers.dart';
-import '../clipboard/clipboard_detection.dart';
 import '../core/utils/url_security.dart';
 import 'resolve_result.dart';
 
-class LinkPrefetchState {
-  const LinkPrefetchState({
+/// Cache de résolution (pré-chargement silencieux + réutilisation au tap).
+class LinkResolveState {
+  const LinkResolveState({
     this.url,
     this.result,
-    this.loading = false,
   });
 
   final String? url;
   final ResolveResult? result;
-  final bool loading;
 }
 
-class LinkPrefetchNotifier extends Notifier<LinkPrefetchState> {
+class LinkResolveNotifier extends Notifier<LinkResolveState> {
   Timer? _debounce;
   Future<ResolveResult>? _inFlight;
   String? _inFlightUrl;
 
   @override
-  LinkPrefetchState build() => const LinkPrefetchState();
+  LinkResolveState build() => const LinkResolveState();
 
   void invalidate() {
     _debounce?.cancel();
     _inFlight = null;
     _inFlightUrl = null;
-    state = const LinkPrefetchState();
+    state = const LinkResolveState();
   }
 
-  /// Analyse en arrière-plan après une courte pause (presse-papiers / champ URL).
+  /// Prépare le lien en arrière-plan (sans changer l’UI).
   void schedule(String raw) {
     final normalized = _normalize(raw);
     if (normalized == null) {
@@ -42,17 +40,16 @@ class LinkPrefetchNotifier extends Notifier<LinkPrefetchState> {
       return;
     }
     if (state.url == normalized &&
-        (state.result != null || state.loading || _inFlightUrl == normalized)) {
+        (state.result != null || _inFlightUrl == normalized)) {
       return;
     }
     _debounce?.cancel();
-    state = LinkPrefetchState(url: normalized);
-    _debounce = Timer(const Duration(milliseconds: 450), () {
-      unawaited(_run(normalized));
+    state = LinkResolveState(url: normalized);
+    _debounce = Timer(const Duration(milliseconds: 350), () {
+      unawaited(_resolve(normalized));
     });
   }
 
-  /// Résultat immédiat si déjà prêt, sinon lance ou attend l’analyse en cours.
   Future<ResolveResult> resolveForDownload(String raw) async {
     final normalized = _normalize(raw);
     if (normalized == null) {
@@ -64,18 +61,16 @@ class LinkPrefetchNotifier extends Notifier<LinkPrefetchState> {
     if (_inFlightUrl == normalized && _inFlight != null) {
       return _inFlight!;
     }
-    return _run(normalized);
+    return _resolve(normalized);
   }
 
-  Future<ResolveResult> _run(String url) async {
+  Future<ResolveResult> _resolve(String url) async {
     if (_inFlightUrl == url && _inFlight != null) {
       return _inFlight!;
     }
 
     _debounce?.cancel();
     _inFlightUrl = url;
-    state = LinkPrefetchState(url: url, loading: true);
-
     final future = _analyze(url);
     _inFlight = future;
     try {
@@ -95,14 +90,11 @@ class LinkPrefetchNotifier extends Notifier<LinkPrefetchState> {
             url,
             fetchVariants: fetchVariants,
           );
-      state = LinkPrefetchState(url: url, result: result);
-      if (result is ResolveSuccess) {
-        ref.read(clipboardDetectionProvider.notifier).ready(result.resource);
-      }
+      state = LinkResolveState(url: url, result: result);
       return result;
     } catch (e) {
       final failure = ResolveFailure('$e');
-      state = LinkPrefetchState(url: url, result: failure);
+      state = LinkResolveState(url: url, result: failure);
       return failure;
     }
   }
@@ -115,6 +107,6 @@ class LinkPrefetchNotifier extends Notifier<LinkPrefetchState> {
 }
 
 final linkPrefetchProvider =
-    NotifierProvider<LinkPrefetchNotifier, LinkPrefetchState>(
-  LinkPrefetchNotifier.new,
+    NotifierProvider<LinkResolveNotifier, LinkResolveState>(
+  LinkResolveNotifier.new,
 );

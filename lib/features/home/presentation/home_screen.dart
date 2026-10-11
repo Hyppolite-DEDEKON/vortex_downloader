@@ -12,8 +12,6 @@ import '../../../resolver/link_prefetch.dart';
 import '../../../resolver/resolve_result.dart';
 import 'quality_picker_sheet.dart';
 
-enum _ActionPhase { idle, analyzing }
-
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
@@ -23,14 +21,14 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   final _urlCtrl = TextEditingController();
-  _ActionPhase _phase = _ActionPhase.idle;
+  bool _busy = false;
   bool _replaceDialogOpen = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _scheduleLinkPrefetch();
+      if (mounted) _warmResolveCache();
     });
   }
 
@@ -40,7 +38,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     super.dispose();
   }
 
-  void _scheduleLinkPrefetch([String? url]) {
+  void _warmResolveCache([String? url]) {
     final u = url ?? _displayedUrl;
     if (u.isEmpty) {
       ref.read(linkPrefetchProvider.notifier).invalidate();
@@ -48,8 +46,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
     ref.read(linkPrefetchProvider.notifier).schedule(u);
   }
-
-  bool get _busy => _phase != _ActionPhase.idle;
 
   String? get _effectiveUrl {
     final det = ref.read(clipboardDetectionProvider);
@@ -69,8 +65,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       return;
     }
 
-    setState(() => _phase = _ActionPhase.analyzing);
-    ref.read(clipboardDetectionProvider.notifier).analyzing();
+    setState(() => _busy = true);
     VortexLog.app.info('Téléchargement demandé : $url');
 
     try {
@@ -86,7 +81,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ];
           if (settings.promptQualityChoice) {
             if (!mounted) return;
-            setState(() => _phase = _ActionPhase.idle);
+            setState(() => _busy = false);
             final picked = await showQualityPickerSheet(
               context: context,
               title: success.resource.fileName,
@@ -97,9 +92,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             if (picked == null) return;
             selections = picked.selections;
           }
-          ref
-              .read(clipboardDetectionProvider.notifier)
-              .ready(selections.first.resource);
           await _startDownloads(url, selections);
         case ResolveFailure(:final message):
           ref.read(clipboardDetectionProvider.notifier).unsupported(message);
@@ -109,13 +101,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           _toast(message);
       }
     } catch (e, st) {
-      VortexLog.app.severe('Analyse / téléchargement interrompu', e, st);
+      VortexLog.app.severe('Téléchargement interrompu', e, st);
       if (mounted) {
         ref.read(clipboardDetectionProvider.notifier).error('$e');
-        _toast('Impossible d’analyser le lien.');
+        _toast('Impossible de traiter le lien.');
       }
     } finally {
-      if (mounted) setState(() => _phase = _ActionPhase.idle);
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -140,13 +132,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         .resetAfterSuccessfulDownload(source);
     _urlCtrl.clear();
     if (!mounted) return;
+    context.go('/downloads');
     if (selections.length == 1) {
       final name = selections.first.resource.fileName;
       _toast('Téléchargement lancé — $name');
     } else {
       _toast('${selections.length} téléchargements lancés');
     }
-    context.go('/downloads');
   }
 
   void _toast(String msg) {
@@ -197,7 +189,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (replace == true) {
       _urlCtrl.text = newUrl;
       notifier.acceptPendingReplacement();
-      _scheduleLinkPrefetch(newUrl);
+      _warmResolveCache(newUrl);
     } else {
       notifier.declinePendingReplacement();
     }
@@ -218,13 +210,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           next.url != null &&
           _urlCtrl.text.trim().isEmpty) {
         _urlCtrl.text = next.url!;
-        _scheduleLinkPrefetch(next.url);
+        _warmResolveCache(next.url);
       }
     });
 
     final detection = ref.watch(clipboardDetectionProvider);
     final activeCount = ref.watch(activeDownloadCountProvider);
     final theme = Theme.of(context);
+    final hasValidLink =
+        UrlSecurity.parseAndValidate(_effectiveUrl ?? '') != null;
 
     return Scaffold(
       body: SafeArea(
@@ -258,7 +252,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     child: Center(
                       child: _HeroDownloadButton(
                         busy: _busy,
-                        phase: _phase,
+                        hasLink: hasValidLink,
                         onPressed: _onHeroTap,
                       ),
                     ),
@@ -271,9 +265,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         ref
                             .read(clipboardDetectionProvider.notifier)
                             .setManualUrl(v.trim());
-                        _scheduleLinkPrefetch(v.trim());
+                        _warmResolveCache(v.trim());
                       } else {
-                        _scheduleLinkPrefetch();
+                        ref
+                            .read(clipboardDetectionProvider.notifier)
+                            .ignore();
+                        _warmResolveCache();
                       }
                     },
                     decoration: InputDecoration(
@@ -292,7 +289,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                       ref
                                           .read(clipboardDetectionProvider.notifier)
                                           .ignore();
-                                      _scheduleLinkPrefetch();
+                                      _warmResolveCache();
                                     },
                             ),
                           IconButton(
@@ -308,7 +305,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                           .read(clipboardDetectionProvider
                                               .notifier)
                                           .setManualUrl(u);
-                                      _scheduleLinkPrefetch(u);
+                                      _warmResolveCache(u);
                                     });
                                   },
                           ),
@@ -327,12 +324,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 class _HeroDownloadButton extends StatefulWidget {
   const _HeroDownloadButton({
     required this.busy,
-    required this.phase,
+    required this.hasLink,
     required this.onPressed,
   });
 
   final bool busy;
-  final _ActionPhase phase;
+  final bool hasLink;
   final VoidCallback onPressed;
 
   @override
@@ -343,9 +340,6 @@ class _HeroDownloadButtonState extends State<_HeroDownloadButton>
     with SingleTickerProviderStateMixin {
   static const _size = 168.0;
   static const _fg = Color(0xE8FFFFFF);
-  static const _violetTop = Color(0xFF5C5280);
-  static const _violetMid = Color(0xFF4A4268);
-  static const _violetBottom = Color(0xFF38324F);
 
   bool _pressed = false;
   late final AnimationController _glow;
@@ -356,7 +350,28 @@ class _HeroDownloadButtonState extends State<_HeroDownloadButton>
     _glow = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2200),
-    )..repeat(reverse: true);
+    );
+    _syncBreathing();
+  }
+
+  @override
+  void didUpdateWidget(covariant _HeroDownloadButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.hasLink != widget.hasLink || oldWidget.busy != widget.busy) {
+      _syncBreathing();
+    }
+  }
+
+  void _syncBreathing() {
+    final breathe = widget.hasLink && !widget.busy;
+    if (breathe) {
+      if (!_glow.isAnimating) {
+        _glow.repeat(reverse: true);
+      }
+    } else {
+      _glow.stop();
+      _glow.value = 0;
+    }
   }
 
   @override
@@ -369,7 +384,13 @@ class _HeroDownloadButtonState extends State<_HeroDownloadButton>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final busy = widget.busy;
-    final scale = _pressed && !busy ? 0.94 : 1.0;
+    final breathe = widget.hasLink && !busy;
+    const gradient = VortexTokens.heroGradient;
+    final pressScale = _pressed && !busy ? 0.94 : 1.0;
+    final breatheScale = breathe
+        ? 1.0 + 0.028 * Curves.easeInOut.transform(_glow.value)
+        : 1.0;
+    final scale = pressScale * breatheScale;
 
     return Semantics(
       button: true,
@@ -380,29 +401,10 @@ class _HeroDownloadButtonState extends State<_HeroDownloadButton>
         child: Stack(
           alignment: Alignment.center,
           children: [
-            if (!busy)
-              AnimatedBuilder(
-                animation: _glow,
-                builder: (context, child) {
-                  final t = Curves.easeInOut.transform(_glow.value);
-                  return Container(
-                    width: _size + 8 + 10 * t,
-                    height: _size + 8 + 10 * t,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: VortexTokens.brandViolet
-                              .withValues(alpha: 0.10 + 0.08 * t),
-                          blurRadius: 28 + 6 * t,
-                          spreadRadius: 0,
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            Transform.scale(
+            AnimatedBuilder(
+              animation: _glow,
+              builder: (context, child) => child!,
+              child: Transform.scale(
               scale: scale,
               child: GestureDetector(
                 onTapDown: busy ? null : (_) => setState(() => _pressed = true),
@@ -414,9 +416,8 @@ class _HeroDownloadButtonState extends State<_HeroDownloadButton>
                       },
                 onTapCancel: busy ? null : () => setState(() => _pressed = false),
                 child: Material(
-                  elevation: busy ? 2 : 6,
-                  shadowColor:
-                      VortexTokens.brandViolet.withValues(alpha: 0.28),
+                  elevation: 0,
+                  shadowColor: Colors.transparent,
                   shape: const CircleBorder(),
                   color: Colors.transparent,
                   child: Ink(
@@ -432,30 +433,12 @@ class _HeroDownloadButtonState extends State<_HeroDownloadButton>
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: busy
-                            ? [
-                                const Color(0xFF1E2230),
-                                const Color(0xFF12151E),
+                            ? const [
+                                Color(0xFF1E2230),
+                                Color(0xFF12151E),
                               ]
-                            : [
-                                _violetTop,
-                                _violetMid,
-                                _violetBottom,
-                              ],
+                            : gradient,
                       ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.35),
-                          blurRadius: 16,
-                          offset: const Offset(0, 8),
-                        ),
-                        if (!busy)
-                          BoxShadow(
-                            color: Colors.white.withValues(alpha: 0.12),
-                            blurRadius: 0,
-                            offset: const Offset(0, -1),
-                            spreadRadius: 0,
-                          ),
-                      ],
                     ),
                     child: SizedBox(
                       width: _size,
@@ -477,28 +460,14 @@ class _HeroDownloadButtonState extends State<_HeroDownloadButton>
                               Icons.download_rounded,
                               size: 52,
                               color: _fg,
-                              shadows: [
-                                Shadow(
-                                  color: Color(0x66000000),
-                                  blurRadius: 12,
-                                  offset: Offset(0, 4),
-                                ),
-                              ],
                             ),
                           const SizedBox(height: 8),
                           Text(
-                            busy ? 'Analyse…' : 'Télécharger',
+                            'Télécharger',
                             style: theme.textTheme.titleMedium?.copyWith(
                               color: _fg,
                               fontWeight: FontWeight.w700,
                               letterSpacing: 0.2,
-                              shadows: const [
-                                Shadow(
-                                  color: Color(0x66000000),
-                                  blurRadius: 8,
-                                  offset: Offset(0, 2),
-                                ),
-                              ],
                             ),
                           ),
                         ],
@@ -507,6 +476,7 @@ class _HeroDownloadButtonState extends State<_HeroDownloadButton>
                   ),
                 ),
               ),
+            ),
             ),
           ],
         ),
