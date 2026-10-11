@@ -14,6 +14,7 @@ import '../core/utils/http_header_utils.dart';
 import '../core/utils/url_security.dart';
 import 'analyzed_resource.dart';
 import 'platform/platform_resolver.dart';
+import 'platform/streaming_hosts.dart';
 import 'platform/ytdlp_locator.dart';
 import 'resolve_result.dart';
 import 'media_variant.dart';
@@ -54,7 +55,12 @@ class SourceResolverChain {
     VortexLog.resolve.info('Analyse de $uri');
     final ctx = ProbeContext(_dio);
     String? lastUnsupportedMessage;
+    final streaming = StreamingHosts.matches(uri.host);
     for (final r in _resolvers) {
+      if (streaming && (r is DirectFileResolver || r is WebPageResolver)) {
+        VortexLog.resolve.fine('${r.name} ignoré (hôte streaming)');
+        continue;
+      }
       VortexLog.resolve.fine('Résolveur ${r.name}…');
       final out = await r.resolve(uri, ctx);
       switch (out) {

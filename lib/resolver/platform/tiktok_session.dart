@@ -221,9 +221,21 @@ class TiktokSession {
     Map<String, String>? headers,
     void Function(int received, int? total)? onProgress,
   }) async {
-    final session = await resolve(sourceUrl);
-    final url = mediaUrl ?? session.mediaUrl;
-    final h = headers ?? session.downloadHeaders;
+    late final String url;
+    late final Map<String, String> h;
+    final hasDirect = mediaUrl != null &&
+        mediaUrl.isNotEmpty &&
+        headers != null &&
+        headers.isNotEmpty;
+    if (hasDirect) {
+      url = mediaUrl;
+      h = headers;
+      VortexLog.download.fine('TikTok CDN (URL déjà résolue)');
+    } else {
+      final session = await resolve(sourceUrl);
+      url = mediaUrl ?? session.mediaUrl;
+      h = headers ?? session.downloadHeaders;
+    }
     final dio = Dio(
       BaseOptions(
         connectTimeout: const Duration(seconds: 30),

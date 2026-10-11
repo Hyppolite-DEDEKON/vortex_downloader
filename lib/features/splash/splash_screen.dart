@@ -28,13 +28,17 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: RadialGradient(
-            center: Alignment(0, -0.2),
+            center: const Alignment(0, -0.2),
             radius: 1.2,
-            colors: [VortexTokens.darkBg2, VortexTokens.darkBg],
+            colors: dark
+                ? [VortexTokens.darkBg2, VortexTokens.darkBg]
+                : [const Color(0xFFE8E4F8), VortexTokens.lightBg],
           ),
         ),
         child: Center(
@@ -54,7 +58,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
               Text(
                 'One link. One tap.',
                 style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      color: VortexTokens.brandCyan,
+                      color: dark ? VortexTokens.brandCyan : scheme.primary,
                     ),
               ),
             ],

@@ -1,16 +1,14 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../resolver/analyzed_resource.dart';
 import 'clipboard_service.dart';
 
-enum DetectionPhase { idle, detected, analyzing, ready, unsupported, error }
+enum DetectionPhase { idle, detected, unsupported, error }
 
 class ClipboardDetectionState {
   const ClipboardDetectionState({
     this.phase = DetectionPhase.idle,
     this.url,
     this.message,
-    this.resource,
     this.manualLock = false,
     this.pendingReplacementUrl,
   });
@@ -18,7 +16,6 @@ class ClipboardDetectionState {
   final DetectionPhase phase;
   final String? url;
   final String? message;
-  final AnalyzedResource? resource;
   final bool manualLock;
   /// Nouveau lien presse-papiers en attente de confirmation (remplacer l’actuel).
   final String? pendingReplacementUrl;
@@ -27,18 +24,15 @@ class ClipboardDetectionState {
     DetectionPhase? phase,
     String? url,
     String? message,
-    AnalyzedResource? resource,
     bool? manualLock,
     String? pendingReplacementUrl,
     bool clearUrl = false,
-    bool clearResource = false,
     bool clearPendingReplacement = false,
   }) {
     return ClipboardDetectionState(
       phase: phase ?? this.phase,
       url: clearUrl ? null : (url ?? this.url),
       message: message ?? this.message,
-      resource: clearResource ? null : (resource ?? this.resource),
       manualLock: manualLock ?? this.manualLock,
       pendingReplacementUrl: clearPendingReplacement
           ? null
@@ -130,23 +124,10 @@ class ClipboardDetectionNotifier extends Notifier<ClipboardDetectionState> {
     );
   }
 
-  void analyzing() {
-    state = state.copyWith(phase: DetectionPhase.analyzing, clearResource: true);
-  }
-
-  void ready(AnalyzedResource resource) {
-    state = state.copyWith(
-      phase: DetectionPhase.ready,
-      resource: resource,
-      message: null,
-    );
-  }
-
   void unsupported(String message) {
     state = state.copyWith(
       phase: DetectionPhase.unsupported,
       message: message,
-      clearResource: true,
     );
   }
 
@@ -154,7 +135,6 @@ class ClipboardDetectionNotifier extends Notifier<ClipboardDetectionState> {
     state = state.copyWith(
       phase: DetectionPhase.error,
       message: message,
-      clearResource: true,
     );
   }
 

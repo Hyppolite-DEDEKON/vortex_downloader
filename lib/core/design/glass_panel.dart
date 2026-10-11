@@ -23,7 +23,7 @@ class GlassPanel extends StatelessWidget {
     final dark = Theme.of(context).brightness == Brightness.dark;
     final radius = BorderRadius.circular(borderRadius);
     final borderColor =
-        dark ? VortexTokens.glassBorderDark : VortexTokens.glassBorder;
+        dark ? VortexTokens.glassBorderDark : VortexTokens.lightGlassBorder;
 
     final content = DecoratedBox(
       decoration: BoxDecoration(
@@ -50,8 +50,8 @@ class GlassPanel extends StatelessWidget {
                         Colors.white.withValues(alpha: 0.03),
                       ]
                     : [
-                        Colors.white.withValues(alpha: 0.75),
-                        Colors.white.withValues(alpha: 0.45),
+                        Colors.white.withValues(alpha: 0.94),
+                        VortexTokens.lightBg2.withValues(alpha: 0.88),
                       ],
               ),
             ),

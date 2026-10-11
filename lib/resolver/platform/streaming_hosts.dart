@@ -1,6 +1,8 @@
 /// Hôtes pour lesquels on tente yt-dlp avant l’analyse HTML lourde.
 abstract final class StreamingHosts {
   static const _suffixes = [
+    'youtube.com',
+    'youtu.be',
     'tiktok.com',
     'instagram.com',
     'facebook.com',
