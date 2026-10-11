@@ -8,6 +8,7 @@ class AppSettings {
     this.onboardingDone = false,
     this.ytdlpPath = '',
     this.promptQualityChoice = true,
+    this.saveToPublicStorage = true,
   });
 
   final AppThemeMode themeMode;
@@ -17,6 +18,9 @@ class AppSettings {
   final String ytdlpPath;
   final bool promptQualityChoice;
 
+  /// Copie vers Galerie (photos/vidéos) ou Téléchargements système après succès.
+  final bool saveToPublicStorage;
+
   AppSettings copyWith({
     AppThemeMode? themeMode,
     bool? wifiOnly,
@@ -24,6 +28,7 @@ class AppSettings {
     bool? onboardingDone,
     String? ytdlpPath,
     bool? promptQualityChoice,
+    bool? saveToPublicStorage,
   }) {
     return AppSettings(
       themeMode: themeMode ?? this.themeMode,
@@ -33,6 +38,8 @@ class AppSettings {
       ytdlpPath: ytdlpPath ?? this.ytdlpPath,
       promptQualityChoice:
           promptQualityChoice ?? this.promptQualityChoice,
+      saveToPublicStorage:
+          saveToPublicStorage ?? this.saveToPublicStorage,
     );
   }
 }

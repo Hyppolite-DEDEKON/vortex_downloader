@@ -18,6 +18,7 @@ class SettingsRepository {
       onboardingDone: _prefs.getBool('onboarding_done') ?? false,
       ytdlpPath: _prefs.getString('ytdlp_path') ?? '',
       promptQualityChoice: _prefs.getBool('prompt_quality') ?? true,
+      saveToPublicStorage: _prefs.getBool('save_public_storage') ?? true,
     );
   }
 
@@ -28,5 +29,6 @@ class SettingsRepository {
     await _prefs.setBool('onboarding_done', s.onboardingDone);
     await _prefs.setString('ytdlp_path', s.ytdlpPath);
     await _prefs.setBool('prompt_quality', s.promptQualityChoice);
+    await _prefs.setBool('save_public_storage', s.saveToPublicStorage);
   }
 }

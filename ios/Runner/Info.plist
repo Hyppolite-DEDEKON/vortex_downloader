@@ -45,5 +45,9 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Vortex enregistre les photos et vidéos téléchargées dans votre galerie.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Vortex enregistre les photos et vidéos téléchargées dans votre galerie.</string>
 </dict>
 </plist>
