@@ -78,7 +78,7 @@ class SettingsScreen extends ConsumerWidget {
                 SwitchListTile(
                   title: const Text('Choisir la qualité'),
                   subtitle: const Text(
-                    'Modal HD / 420p converti et poids avant chaque téléchargement.',
+                    'Modal de choix du format et du poids avant chaque téléchargement.',
                   ),
                   value: settings.promptQualityChoice,
                   onChanged: (v) => ref.read(settingsProvider.notifier).update(

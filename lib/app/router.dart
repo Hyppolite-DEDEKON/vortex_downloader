@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/design/glass_panel.dart';
+import '../core/design/vortex_tokens.dart';
 import '../features/downloads/presentation/downloads_screen.dart';
 import '../features/home/presentation/home_screen.dart';
 import '../features/onboarding/onboarding_screen.dart';
@@ -57,12 +59,16 @@ class VortexShell extends StatelessWidget {
   const VortexShell({super.key, required this.shell});
   final StatefulNavigationShell shell;
 
-  static const _barInset = 6.0;
-  static const _barRadius = 32.0;
-  static const _tabRadius = _barRadius - _barInset;
+  static const _dockRadius = 34.0;
+  static const _dockInset = 5.0;
+  static const _pillRadius = _dockRadius - _dockInset;
+  static const _dockHeight = 66.0;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final dark = theme.brightness == Brightness.dark;
     final bottom = MediaQuery.paddingOf(context).bottom;
 
     return Scaffold(
@@ -71,33 +77,106 @@ class VortexShell extends StatelessWidget {
       bottomNavigationBar: Material(
         type: MaterialType.transparency,
         child: Padding(
-          padding: EdgeInsets.fromLTRB(20, 0, 20, 12 + bottom),
-          child: GlassPanel(
-            padding: const EdgeInsets.all(_barInset),
-            borderRadius: _barRadius,
-            child: Row(
-              children: [
-                _ShellTab(
-                  selected: shell.currentIndex == 0,
-                  icon: Icons.home_rounded,
-                  label: 'Accueil',
-                  tabRadius: _tabRadius,
-                  onTap: () => shell.goBranch(0, initialLocation: true),
-                ),
-                const SizedBox(width: 4),
-                _ShellTab(
-                  selected: shell.currentIndex == 1,
-                  icon: Icons.download_rounded,
-                  label: 'Téléchargements',
-                  tabRadius: _tabRadius,
-                  onTap: () => shell.goBranch(1, initialLocation: true),
+          padding: EdgeInsets.fromLTRB(22, 0, 22, 10 + bottom),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(_dockRadius + 4),
+              boxShadow: [
+                BoxShadow(
+                  color: (dark ? Colors.black : scheme.primary)
+                      .withValues(alpha: dark ? 0.45 : 0.14),
+                  blurRadius: dark ? 28 : 22,
+                  offset: const Offset(0, 10),
+                  spreadRadius: dark ? -4 : 0,
                 ),
               ],
+            ),
+            child: GlassPanel(
+              padding: const EdgeInsets.all(_dockInset),
+              borderRadius: _dockRadius,
+              child: SizedBox(
+                height: _dockHeight,
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final tabWidth = constraints.maxWidth / 2;
+                    return Stack(
+                      clipBehavior: Clip.hardEdge,
+                      children: [
+                        AnimatedPositioned(
+                          duration: const Duration(milliseconds: 320),
+                          curve: Curves.easeOutCubic,
+                          left: shell.currentIndex * tabWidth,
+                          width: tabWidth,
+                          top: 0,
+                          bottom: 0,
+                          child: Padding(
+                            padding: const EdgeInsets.all(2),
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                borderRadius:
+                                    BorderRadius.circular(_pillRadius - 2),
+                                gradient: LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: dark
+                                      ? [
+                                          VortexTokens.brandViolet
+                                              .withValues(alpha: 0.38),
+                                          VortexTokens.brandVioletDeep
+                                              .withValues(alpha: 0.22),
+                                        ]
+                                      : [
+                                          scheme.primaryContainer
+                                              .withValues(alpha: 0.95),
+                                          scheme.primary
+                                              .withValues(alpha: 0.12),
+                                        ],
+                                ),
+                                border: Border.all(
+                                  color: scheme.primary
+                                      .withValues(alpha: dark ? 0.28 : 0.18),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        Row(
+                          children: [
+                            _ShellTab(
+                              selected: shell.currentIndex == 0,
+                              icon: Icons.home_rounded,
+                              selectedIcon: Icons.home_filled,
+                              label: 'Accueil',
+                              pillRadius: _pillRadius,
+                              onTap: () => _goToTab(shell, 0),
+                            ),
+                            _ShellTab(
+                              selected: shell.currentIndex == 1,
+                              icon: Icons.download_rounded,
+                              selectedIcon: Icons.download_for_offline_rounded,
+                              label: 'Téléchargements',
+                              pillRadius: _pillRadius,
+                              onTap: () => _goToTab(shell, 1),
+                            ),
+                          ],
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
             ),
           ),
         ),
       ),
     );
+  }
+
+  void _goToTab(StatefulNavigationShell shell, int index) {
+    if (shell.currentIndex != index) {
+      HapticFeedback.lightImpact();
+    }
+    shell.goBranch(index, initialLocation: true);
   }
 }
 
@@ -105,23 +184,25 @@ class _ShellTab extends StatelessWidget {
   const _ShellTab({
     required this.selected,
     required this.icon,
+    required this.selectedIcon,
     required this.label,
-    required this.tabRadius,
+    required this.pillRadius,
     required this.onTap,
   });
 
   final bool selected;
   final IconData icon;
+  final IconData selectedIcon;
   final String label;
-  final double tabRadius;
+  final double pillRadius;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final fg = selected ? scheme.onSecondaryContainer : scheme.onSurfaceVariant;
-    final radius = BorderRadius.circular(tabRadius);
+    final fg = selected ? scheme.primary : scheme.onSurfaceVariant;
+    final radius = BorderRadius.circular(pillRadius);
 
     return Expanded(
       child: Material(
@@ -131,28 +212,45 @@ class _ShellTab extends StatelessWidget {
         child: InkWell(
           onTap: onTap,
           borderRadius: radius,
-          splashColor: scheme.primary.withValues(alpha: 0.12),
+          splashColor: scheme.primary.withValues(alpha: 0.14),
           highlightColor: scheme.primary.withValues(alpha: 0.06),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            decoration: BoxDecoration(
-              borderRadius: radius,
-              color: selected ? scheme.secondaryContainer : Colors.transparent,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, color: fg, size: 22),
-                const SizedBox(height: 2),
-                Text(
-                  label,
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: fg,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+          child: AnimatedScale(
+            scale: selected ? 1.0 : 0.96,
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeInCubic,
+                    child: Icon(
+                      selected ? selectedIcon : icon,
+                      key: ValueKey(selected),
+                      color: fg,
+                      size: selected ? 26 : 24,
+                    ),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 4),
+                  AnimatedDefaultTextStyle(
+                    duration: const Duration(milliseconds: 200),
+                    style: theme.textTheme.labelSmall!.copyWith(
+                      color: fg,
+                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                      letterSpacing: selected ? 0.1 : 0,
+                    ),
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

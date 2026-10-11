@@ -24,9 +24,14 @@ class LinkAnalyzer {
         if (!fetchVariants || success.variants.isNotEmpty) {
           return success;
         }
-        final listed = await _chain.listMediaVariants(normalized);
-        final variants = listed.isNotEmpty ? listed : success.variants;
-        return ResolveSuccess(success.resource, variants: variants);
+        try {
+          final listed = await _chain.listMediaVariants(normalized);
+          final variants = listed.isNotEmpty ? listed : success.variants;
+          return ResolveSuccess(success.resource, variants: variants);
+        } catch (e, st) {
+          VortexLog.resolve.warning('Liste des variantes : $e', e, st);
+          return success;
+        }
       }
       return result;
     } on SecurityBlockedException catch (e) {

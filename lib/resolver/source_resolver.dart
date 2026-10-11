@@ -10,6 +10,7 @@ import '../core/logging/vortex_logger.dart';
 import '../core/networking/http_client_factory.dart';
 import '../core/utils/file_name_utils.dart';
 import '../core/utils/format_utils.dart';
+import '../core/utils/link_access_messages.dart';
 import '../core/utils/http_header_utils.dart';
 import '../core/utils/url_security.dart';
 import 'analyzed_resource.dart';
@@ -101,20 +102,10 @@ class DirectFileResolver implements SourceResolver {
   Future<ResolveResult> resolve(Uri start, ProbeContext ctx) async {
     try {
       final probe = await _probe(start, ctx);
-      if (probe.code == 403) {
-        return const ResolveFailure('Accès refusé (403).');
-      }
-      if (probe.code == 404) {
-        return const ResolveFailure('Fichier introuvable (404).');
-      }
-      if (probe.code == 429) {
-        return const ResolveFailure('Trop de requêtes (429).');
-      }
-      if (probe.code >= 500) {
-        return ResolveFailure('Erreur serveur (${probe.code}).');
-      }
       if (probe.code >= 400) {
-        return ResolveFailure('Requête rejetée (${probe.code}).');
+        return ResolveFailure(
+          LinkAccessMessages.resolveFailureForHttpStatus(probe.code),
+        );
       }
       final mime = probe.mime?.split(';').first.trim().toLowerCase();
       if (mime == 'text/html') {

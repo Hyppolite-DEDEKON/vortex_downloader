@@ -261,6 +261,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     controller: _urlCtrl,
                     enabled: !_busy,
                     onChanged: (v) {
+                      setState(() {});
                       if (v.trim().isNotEmpty) {
                         ref
                             .read(clipboardDetectionProvider.notifier)
@@ -338,7 +339,7 @@ class _HeroDownloadButton extends StatefulWidget {
 
 class _HeroDownloadButtonState extends State<_HeroDownloadButton>
     with SingleTickerProviderStateMixin {
-  static const _size = 168.0;
+  static const _size = 188.0;
   static const _fg = Color(0xE8FFFFFF);
 
   bool _pressed = false;
@@ -349,7 +350,7 @@ class _HeroDownloadButtonState extends State<_HeroDownloadButton>
     super.initState();
     _glow = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 2200),
+      duration: const Duration(milliseconds: 1800),
     );
     _syncBreathing();
   }
@@ -384,13 +385,7 @@ class _HeroDownloadButtonState extends State<_HeroDownloadButton>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final busy = widget.busy;
-    final breathe = widget.hasLink && !busy;
     const gradient = VortexTokens.heroGradient;
-    final pressScale = _pressed && !busy ? 0.94 : 1.0;
-    final breatheScale = breathe
-        ? 1.0 + 0.028 * Curves.easeInOut.transform(_glow.value)
-        : 1.0;
-    final scale = pressScale * breatheScale;
 
     return Semantics(
       button: true,
@@ -403,9 +398,17 @@ class _HeroDownloadButtonState extends State<_HeroDownloadButton>
           children: [
             AnimatedBuilder(
               animation: _glow,
-              builder: (context, child) => child!,
-              child: Transform.scale(
-              scale: scale,
+              builder: (context, child) {
+                final breathe = widget.hasLink && !busy;
+                final pressScale = _pressed && !busy ? 0.94 : 1.0;
+                final breatheScale = breathe
+                    ? 1.0 + 0.085 * Curves.easeInOut.transform(_glow.value)
+                    : 1.0;
+                return Transform.scale(
+                  scale: pressScale * breatheScale,
+                  child: child,
+                );
+              },
               child: GestureDetector(
                 onTapDown: busy ? null : (_) => setState(() => _pressed = true),
                 onTapUp: busy
@@ -458,7 +461,7 @@ class _HeroDownloadButtonState extends State<_HeroDownloadButton>
                           else
                             const Icon(
                               Icons.download_rounded,
-                              size: 52,
+                              size: 58,
                               color: _fg,
                             ),
                           const SizedBox(height: 8),
@@ -476,7 +479,6 @@ class _HeroDownloadButtonState extends State<_HeroDownloadButton>
                   ),
                 ),
               ),
-            ),
             ),
           ],
         ),

@@ -8,6 +8,9 @@ import 'package:uuid/uuid.dart';
 
 import '../core/errors/app_exception.dart';
 import '../core/logging/vortex_logger.dart';
+import '../core/utils/link_access_messages.dart';
+import '../resolver/platform/extractor_service.dart';
+import 'extractor_download_headers.dart';
 import '../core/networking/http_client_factory.dart';
 import '../core/utils/file_name_utils.dart';
 import '../features/downloads/data/download_repository.dart';
@@ -105,6 +108,7 @@ class DownloadManager {
   Future<void> pause(String id) async {
     _paused.add(id);
     _tokens[id]?.cancel('pause');
+    await ExtractorService.cancelDownload(id);
     final t = await _repo.findById(id);
     if (t == null) return;
     final u = t.copyWith(status: DownloadStatus.paused);
@@ -124,6 +128,7 @@ class DownloadManager {
     _jobs.remove(id);
     _paused.remove(id);
     _tokens[id]?.cancel('cancel');
+    await ExtractorService.cancelDownload(id);
     final t = await _repo.findById(id);
     if (t == null) return;
     final u = t.copyWith(
@@ -135,9 +140,36 @@ class DownloadManager {
     onTaskUpdated?.call(u);
   }
 
-  Future<void> retry(DownloadTask task) async {
+  Future<void> retry(
+    DownloadTask task, {
+    Future<AnalyzedResource?> Function(String sourceUrl)? refreshFromSource,
+  }) async {
     _paused.remove(task.id);
-    final u = task.copyWith(
+    var next = task;
+    final shouldRefresh = refreshFromSource != null &&
+        ((task.downloadUrl != null && task.downloadUrl != task.sourceUrl) ||
+            LinkAccessMessages.shouldReanalyzeForRetry(task.lastError));
+    if (shouldRefresh && refreshFromSource != null) {
+      final resource = await refreshFromSource(task.sourceUrl);
+      if (resource == null) {
+        final failed = task.copyWith(
+          status: DownloadStatus.failed,
+          lastError: LinkAccessMessages.reanalyzeFailed,
+        );
+        await _repo.upsert(failed);
+        onTaskUpdated?.call(failed);
+        return;
+      }
+      next = task.copyWith(
+        downloadUrl: resource.finalUrl,
+        downloadHeaders: resource.downloadHeaders,
+        totalBytes: resource.totalBytes,
+        supportsResume: resource.supportsResume,
+        mimeType: resource.mimeType,
+        thumbnailUrl: resource.thumbnailUrl,
+      );
+    }
+    final u = next.copyWith(
       status: DownloadStatus.queued,
       clearLastError: true,
       clearFinishedAt: true,
@@ -249,6 +281,19 @@ class DownloadManager {
           received = await File(temp).length();
           total = received;
         }
+      } else if (ExtractorDownloadHeaders.isMergedDownload(task.downloadHeaders) &&
+          ExtractorService.isPlatform) {
+        if (File(temp).existsSync()) await File(temp).delete();
+        token.whenCancel.then((_) => ExtractorService.cancelDownload(id));
+        await ExtractorService.downloadMergedToFile(
+          pageUrl: task.sourceUrl,
+          targetPath: temp,
+          processId: id,
+          formatSelector:
+              ExtractorDownloadHeaders.formatSelector(task.downloadHeaders),
+        );
+        received = await File(temp).length();
+        total = received;
       } else {
         final raf = await File(temp).open(
           mode: received > 0 ? FileMode.append : FileMode.write,
@@ -344,7 +389,7 @@ class DownloadManager {
         return;
       }
       VortexLog.download.warning('Réseau $id : ${e.message}', e);
-      await _fail(id, e.message ?? 'Erreur réseau.');
+      await _fail(id, LinkAccessMessages.userMessageForDio(e));
     } on AppException catch (e) {
       VortexLog.download.warning('Échec $id : ${e.message}');
       await _fail(id, e.message);

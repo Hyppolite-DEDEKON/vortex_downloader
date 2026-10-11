@@ -4,11 +4,16 @@ import 'dart:io';
 import 'package:extractor/extractor.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:path/path.dart' as p;
 
+import '../../core/errors/app_exception.dart';
 import '../../core/logging/vortex_logger.dart';
 import '../../core/utils/file_name_utils.dart';
+import '../../core/utils/format_utils.dart';
+import '../../downloads/extractor_download_headers.dart';
 import '../analyzed_resource.dart';
 import '../resolve_result.dart';
+import 'ytdlp_format_pick.dart';
 
 /// yt-dlp embarqué sur Android via le plugin [extractor].
 abstract final class ExtractorService {
@@ -43,12 +48,12 @@ abstract final class ExtractorService {
     try {
       VortexLog.ytdlp.info('Initialisation extractor (Android)…');
       final result = await YoutubeDLFlutter.instance.initialize(
-        enableFFmpeg: false,
+        enableFFmpeg: true,
         enableAria2c: false,
       );
       _ready = result.success;
       if (_ready) {
-        VortexLog.ytdlp.info('extractor prêt');
+        VortexLog.ytdlp.info('extractor prêt (FFmpeg activé)');
         unawaited(_maybeUpdateYtdlp());
       } else {
         VortexLog.ytdlp.warning(
@@ -72,40 +77,56 @@ abstract final class ExtractorService {
     try {
       VortexLog.ytdlp.info('Extraction extractor : $pageUrl');
       final info = await YoutubeDLFlutter.instance.getVideoInfo(pageUrl);
-      final format = _pickFormat(info);
-      if (format == null) {
-        return const ResolveFailure(
-          'Format nécessitant une fusion audio/vidéo non géré. '
-          'Réessayez une autre qualité ou mettez à jour yt-dlp.',
+      final format = await _pickResolvableFormat(pageUrl, info);
+      final title = (info.title ?? 'video').trim();
+
+      if (format != null) {
+        final mediaUrl = format.url?.trim();
+        if (mediaUrl == null || !mediaUrl.startsWith('http')) {
+          return const ResolveFailure('URL média invalide renvoyée par yt-dlp.');
+        }
+
+        final ext = (format.ext ?? info.ext ?? 'mp4').replaceAll('.', '');
+        final fileName = FileNameUtils.sanitize(
+          title.endsWith('.$ext') ? title : '$title.$ext',
+        );
+        final vcodec = format.vcodec ?? info.vcodec ?? '';
+        final acodec = format.acodec ?? info.acodec ?? '';
+        final mime = YtdlpMime.fromCodecs(ext, vcodec: vcodec, acodec: acodec);
+        final kind = YtdlpMime.contentKind(vcodec, acodec, mime);
+
+        VortexLog.ytdlp.info('extractor OK → $fileName');
+        return ResolveSuccess(
+          AnalyzedResource(
+            finalUrl: mediaUrl,
+            fileName: fileName,
+            mimeType: mime,
+            totalBytes: format.filesize,
+            supportsResume: false,
+            resolverName: 'yt-dlp',
+            contentKind: kind,
+            thumbnailUrl: normalizeThumbnailUrl(info.thumbnail),
+          ),
         );
       }
 
-      final mediaUrl = format.url?.trim();
-      if (mediaUrl == null || !mediaUrl.startsWith('http')) {
-        return const ResolveFailure('URL média invalide renvoyée par yt-dlp.');
-      }
-
-      final title = (info.title ?? 'video').trim();
-      final ext = (format.ext ?? info.ext ?? 'mp4').replaceAll('.', '');
+      VortexLog.ytdlp.info(
+        'Fusion audio/vidéo requise (extractor) : $pageUrl',
+      );
+      final ext = (info.ext ?? 'mp4').replaceAll('.', '');
       final fileName = FileNameUtils.sanitize(
         title.endsWith('.$ext') ? title : '$title.$ext',
       );
-      final vcodec = format.vcodec ?? info.vcodec ?? '';
-      final acodec = format.acodec ?? info.acodec ?? '';
-      final mime = YtdlpMime.fromCodecs(ext, vcodec: vcodec, acodec: acodec);
-      final kind = YtdlpMime.contentKind(vcodec, acodec, mime);
-
-      VortexLog.ytdlp.info('extractor OK → $fileName');
       return ResolveSuccess(
         AnalyzedResource(
-          finalUrl: mediaUrl,
+          finalUrl: pageUrl,
           fileName: fileName,
-          mimeType: mime,
-          totalBytes: format.filesize,
+          mimeType: 'video/mp4',
           supportsResume: false,
           resolverName: 'yt-dlp',
-          contentKind: kind,
+          contentKind: ContentKind.video,
           thumbnailUrl: normalizeThumbnailUrl(info.thumbnail),
+          downloadHeaders: ExtractorDownloadHeaders.merged(),
         ),
       );
     } on PlatformException catch (e) {
@@ -122,42 +143,200 @@ abstract final class ExtractorService {
     }
   }
 
-  static VideoFormat? _pickFormat(VideoInfo info) {
-    final direct = info.url?.trim();
-    if (direct != null && direct.startsWith('http')) {
-      return VideoFormat(
-        url: direct,
-        ext: info.ext,
-        filesize: null,
-        vcodec: info.vcodec,
-        acodec: info.acodec,
-        width: info.width,
-        height: info.height,
+  static Future<VideoFormat?> _pickResolvableFormat(
+    String pageUrl,
+    VideoInfo initial,
+  ) async {
+    var format = YtdlpFormatPick.bestMuxed(initial);
+    if (format != null) return format;
+
+    for (final selector in [
+      YtdlpFormatPick.mergedFormatSelector,
+      YtdlpFormatPick.mergedFormatSelectorCompat,
+    ]) {
+      final info = await YoutubeDLFlutter.instance.getVideoInfoWithOptions(
+        pageUrl,
+        {'--format': selector},
+      );
+      format = YtdlpFormatPick.bestMuxed(info);
+      if (format != null) return format;
+      format = YtdlpFormatPick.selectedMuxedFromInfo(info);
+      if (format != null) return format;
+    }
+    return null;
+  }
+
+  /// Télécharge et fusionne via yt-dlp + FFmpeg vers [targetPath].
+  static Future<void> downloadMergedToFile({
+    required String pageUrl,
+    required String targetPath,
+    required String processId,
+    required String formatSelector,
+  }) async {
+    if (!await ensureReady()) {
+      throw const DownloadException(
+        'yt-dlp indisponible sur cet appareil.',
       );
     }
 
-    final formats = info.formats;
-    if (formats == null || formats.isEmpty) return null;
+    final dir = p.dirname(targetPath);
+    final stem = _mergeStemFromPartPath(targetPath);
+    final request = DownloadRequest(
+      url: pageUrl,
+      outputPath: dir,
+      outputTemplate: '$stem.%(ext)s',
+      format: formatSelector,
+      noPlaylist: true,
+      embedThumbnail: false,
+      embedMetadata: false,
+      customOptions: YtdlpFormatPick.mergeDownloadOptions,
+      processId: processId,
+    );
 
-    VideoFormat? bestCombined;
-    for (final f in formats) {
-      if (f == null) continue;
-      final url = f.url?.trim();
-      if (url == null || !url.startsWith('http')) continue;
-
-      final hasVideo = _hasTrack(f.vcodec);
-      final hasAudio = _hasTrack(f.acodec);
-      if (hasVideo && hasAudio) {
-        final h = f.height ?? 0;
-        final bestH = bestCombined?.height ?? 0;
-        if (bestCombined == null || h > bestH) bestCombined = f;
-      }
+    VortexLog.ytdlp.info('Téléchargement fusionné → $targetPath');
+    final result = await YoutubeDLFlutter.instance.download(request);
+    if (result.status != OperationStatus.success) {
+      final msg = result.errorMessage?.trim();
+      throw DownloadException(
+        msg == null || msg.isEmpty
+            ? 'Échec de la fusion audio/vidéo.'
+            : msg,
+      );
     }
-    return bestCombined;
+
+    final produced = await _resolveMergedOutputFile(
+      dir: dir,
+      stem: stem,
+      reportedPath: result.outputPath?.trim(),
+    );
+    if (produced == null) {
+      VortexLog.ytdlp.warning(
+        'Fichier fusionné introuvable (rapporté : ${result.outputPath})',
+      );
+      throw const DownloadException('Fichier fusionné absent sur le disque.');
+    }
+
+    final producedFile = File(produced);
+    final size = await producedFile.length();
+    VortexLog.ytdlp.info(
+      'Fusion produite : $produced (${FormatUtils.formatBytes(size)})',
+    );
+    if (size < 48 * 1024) {
+      throw const DownloadException(
+        'Fichier trop petit — la fusion audio/vidéo a probablement échoué.',
+      );
+    }
+
+    await _deleteMergeFragments(dir, stem, keepPath: produced);
+
+    final target = File(targetPath);
+    if (p.normalize(produced) != p.normalize(targetPath)) {
+      if (await target.exists()) await target.delete();
+      await producedFile.rename(targetPath);
+    }
   }
 
-  static bool _hasTrack(String? codec) =>
-      codec != null && codec.isNotEmpty && codec != 'none';
+  /// `…/fichier.mp4.part` → `fichier` (sans `.part` ni extension finale).
+  static String _mergeStemFromPartPath(String partPath) {
+    var name = p.basename(partPath);
+    if (name.endsWith('.part')) {
+      name = name.substring(0, name.length - '.part'.length);
+    }
+    return p.basenameWithoutExtension(name);
+  }
+
+  /// Le plugin Android renvoie souvent le modèle `-o` avec `%(ext)s` non résolu.
+  static Future<String?> _resolveMergedOutputFile({
+    required String dir,
+    required String stem,
+    required String? reportedPath,
+  }) async {
+    final candidates = <File>[];
+
+    void addIfMedia(File file) {
+      if (!_isMergeOutputCandidate(file.path)) return;
+      candidates.add(file);
+    }
+
+    if (reportedPath != null && reportedPath.isNotEmpty) {
+      if (reportedPath.contains('%(ext)s')) {
+        for (final ext in ['mp4', 'mkv', 'webm']) {
+          addIfMedia(File(reportedPath.replaceAll('%(ext)s', ext)));
+        }
+      } else {
+        addIfMedia(File(reportedPath));
+      }
+    }
+
+    for (final ext in ['mp4', 'mkv', 'webm']) {
+      addIfMedia(File(p.join(dir, '$stem.$ext')));
+    }
+
+    final directory = Directory(dir);
+    if (await directory.exists()) {
+      await for (final entity in directory.list()) {
+        if (entity is! File) continue;
+        final name = p.basename(entity.path);
+        if (!name.startsWith(stem)) continue;
+        addIfMedia(entity);
+      }
+    }
+
+    if (candidates.isEmpty) return null;
+
+    final existing = <File>[];
+    for (final f in candidates) {
+      if (await f.exists()) existing.add(f);
+    }
+    if (existing.isEmpty) return null;
+
+    existing.sort((a, b) => b.lengthSync().compareTo(a.lengthSync()));
+    return existing.first.path;
+  }
+
+  /// Exclut fragments DASH (`fichier.f1234.mp4`) et pistes audio seules.
+  static bool _isMergeOutputCandidate(String path) {
+    final name = p.basename(path).toLowerCase();
+    if (name.endsWith('.part') || name.endsWith('.m4a')) return false;
+    if (RegExp(r'\.f\d+\.').hasMatch(name)) return false;
+    return name.endsWith('.mp4') ||
+        name.endsWith('.mkv') ||
+        name.endsWith('.webm');
+  }
+
+  static Future<void> _deleteMergeFragments(
+    String dir,
+    String stem, {
+    required String keepPath,
+  }) async {
+    final keep = p.normalize(keepPath);
+    final directory = Directory(dir);
+    if (!await directory.exists()) return;
+    await for (final entity in directory.list()) {
+      if (entity is! File) continue;
+      if (p.normalize(entity.path) == keep) continue;
+      final name = p.basename(entity.path);
+      if (!name.startsWith(stem)) continue;
+      if (name.endsWith('.part')) continue;
+      if (RegExp(r'\.f\d+\.').hasMatch(name.toLowerCase()) ||
+          name.toLowerCase().endsWith('.m4a')) {
+        try {
+          await entity.delete();
+        } catch (e) {
+          VortexLog.ytdlp.fine('Nettoyage fragment : $e');
+        }
+      }
+    }
+  }
+
+  static Future<void> cancelDownload(String processId) async {
+    if (!isPlatform || !_ready) return;
+    try {
+      await YoutubeDLFlutter.instance.cancelDownload(processId);
+    } catch (e) {
+      VortexLog.ytdlp.fine('Annulation extractor $processId : $e');
+    }
+  }
 }
 
 /// MIME / type dérivés des codecs (partagé desktop + Android).
