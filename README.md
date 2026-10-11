@@ -117,8 +117,9 @@ flutter clean && flutter pub get && flutter run
 Les contributions sont les bienvenues (issues, PR, traductions, tests).
 
 1. Fork le dépôt et créez une branche (`feat/ma-fonctionnalite`).
-2. Respectez `flutter analyze` et `flutter test`.
-3. Décrivez clairement le **pourquoi** dans la PR.
+2. Activez les hooks Git du dépôt : `git config core.hooksPath .githooks`
+3. Respectez `flutter analyze` et `flutter test`.
+4. Décrivez clairement le **pourquoi** dans la PR.
 
 Pour les bugs, indiquez la **plateforme**, la **version Flutter** et un **lien exemple** (si possible sans contenu sensible).
 

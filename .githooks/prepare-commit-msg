@@ -1,0 +1,14 @@
+#!/bin/sh
+# Retire l’attribution Cursor des messages de commit (co-auteur / trailers).
+case "$1" in
+  merge|squash) exit 0 ;;
+esac
+if [ ! -f "$1" ]; then
+  exit 0
+fi
+tmp="${1}.vortex"
+grep -v -i 'cursoragent@cursor.com' "$1" \
+  | grep -v -i '^co-authored-by: cursor' \
+  | grep -v -i '^made-with: cursor' \
+  > "$tmp" || true
+mv "$tmp" "$1"

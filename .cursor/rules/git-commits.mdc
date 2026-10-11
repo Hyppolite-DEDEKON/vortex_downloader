@@ -1,0 +1,9 @@
+---
+description: Messages de commit Git sans attribution Cursor
+alwaysApply: true
+---
+
+# Commits Git
+
+- Ne jamais ajouter `Co-authored-by: Cursor`, `cursoragent@cursor.com`, ni `Made-with: Cursor` dans les messages de commit.
+- L’auteur du commit reste l’utilisateur du dépôt ; message concis en français ou anglais selon le dépôt.
