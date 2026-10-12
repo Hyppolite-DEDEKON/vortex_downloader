@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/providers.dart';
-import '../../core/design/vortex_orb.dart';
 import '../../core/design/vortex_tokens.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
@@ -45,7 +44,15 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const VortexOrb(size: 120),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(28),
+                child: Image.asset(
+                  'assets/branding/app_icon.png',
+                  width: 120,
+                  height: 120,
+                  filterQuality: FilterQuality.high,
+                ),
+              ),
               const SizedBox(height: 20),
               Text(
                 'Vortex',
